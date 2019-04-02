@@ -9,7 +9,9 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 from wit import Wit
 import os
+from gtts import gTTS
 from apixu.client import ApixuClient
+import face_recog
 
 #api_key = os.environ['6ccd8584cdc2431f82a35428191703']
 clientWeather = ApixuClient('6ccd8584cdc2431f82a35428191703')
@@ -36,24 +38,7 @@ def validationMessage(income):
     resp = client.message(income)
     print('Response: {}'.format(resp))
 
-    HOST = "192.168.1.5"
-
-    dict={
-        "Prender luces": "Luces encendidas",
-        "prender luces": "Luces encendidas",
-        "Apagar luces": "Luces apagadas",
-        "apagar luces": "Luces apagadas",
-        "state?": "state",
-        "State?": "state",
-        "Estado?": "state",
-        "estado?": "state",
-        "estado": "state",
-        "state": "state",
-        "Turn On" : "Luces encendidas",
-        "Turn Off" : "Luces apagadas",
-        "turn on" : "Luces encendidas",
-        "turn off" : "Luces apagadas"
-    }
+    HOST = "192.168.0.23"
 
     outgoing_message = ""
 
@@ -61,19 +46,19 @@ def validationMessage(income):
         incoming_message=resp['entities']['luz'][0]['value']
         if(incoming_message == "on"):
                 req = requests.get("http://"+HOST+"/on")
-                outgoing_message="Luces Prendidas"
+                outgoing_message="Luces encendidas"
 		print(req.text)
         elif(incoming_message == "off"):
-		outgoing_message="Luces Apagadas"
+		outgoing_message="Luces apagadas"
                 req = requests.get("http://"+HOST+"/off")
         else:
             req = requests.get("http://"+HOST+"/state")
             state = ""
             if(req.text == "Off"):
-                state = "OFF"
+                state = "apagadas"
             else:  
-                state = "ON"
-            outgoing_message = "The current light state is: " + state
+                state = "encendidas"
+            outgoing_message = "El estado actual de las luces es: " + state
     elif 'spotify' in resp['entities']:
         incoming_message=resp['entities']['spotify'][0]['value']
         if(incoming_message == "info"):
@@ -84,26 +69,33 @@ def validationMessage(income):
             banda = resp['_text'].replace("spotify", "")
             banda = banda.replace("open", "")
             outgoing_message = get_linkTo(banda)
+
     elif 'intent' in resp['entities']:
         if 'clima' == resp['entities']['intent'][0]['value']:
             for item in resp['entities']['location'][0]['resolved']['values']:
                 if("wikipedia" in item['external']):                         
                     current = clientWeather.current(q=item['external']['wikipedia'])
                     text = current['location']['name'] + "\n"
-                    text += current['location']['region'] + "\n"
-                    text += "Current temperature is: \n"
-                    text += str(current['current']['temp_c']) +"\n"
-                    text += "-------------- \n"
+                    text += current['location']['country'] + "\n"
+                    text += "La temperatura actual es de: \n"
+                    text += str(current['current']['temp_c']) +" grados\n"
+                    text += "...................... \n"
                     outgoing_message += text
+                else:
+                    outgoing_message= "Lo siento, no encuentro ese lugar. Prueba nuevamente"
+
         if 'puerta' == resp['entities']['intent'][0]['value']:
             incoming_message=resp['entities']['intent'][0]['value']
-            print("Connecting to ->")
-            req = requests.get("http://192.168.43.183:5000/quien_es")
-            outgoing_message = "People will be in this URL -> http://192.168.43.183:5000/static/detection/FotoPuerta.jpg \n"
-            outgoing_message += req.content
-    else:
-        outgoing_message = "Sorry! I don't recognize that instruction. Please try again"
+            outgoing_message = face_recog.run("./app/static/detection/")
 
+    else:
+        outgoing_message = "Disculpa... No entiendo esa instruccion... Por favor intenta de nuevo"
+
+    tts = gTTS(outgoing_message, lang='es')
+    tts.save('sound.mp3')
+    sound = "mpg123 sound.mp3"
+    os.system(sound)
+    os.remove('sound.mp3')
     return outgoing_message
 
 @app.route("/")
@@ -127,12 +119,12 @@ def search_song(name):
     items = results['artists']['items']
     if len(items) > 0:
         artist = items[0]
-        text_complete = "The band name is "+artist['name']+"\n"
-        text_complete += "His popularity is "+str(artist['popularity'])+"% \n"
-        text_complete += "Play genres like: "+" ".join(artist['genres'])+"\n"
-        text_complete += "Has a lot of followers, precisly "+str(artist['followers']['total'])+"\n"
+        text_complete = "El nombre de la banda es: "+artist['name']+"\n"
+        text_complete += "Su popularidad actual es "+str(artist['popularity'])+"% \n"
+        #text_complete += "Play genres like: "+" ".join(artist['genres'])+"\n"
+        text_complete += "Tiene muchos seguidores, precisamente: "+str(artist['followers']['total'])+"\n"
     else:
-        text_complete = "Write better the name, using ""info *the band whatever you want*"""
+        text_complete = "Prueba escribir nuevamente el nombre de la banda"
     return text_complete
     #return items
 
@@ -145,5 +137,5 @@ def get_linkTo(name):
         artist = items[0]
         text = artist['external_urls']['spotify']
     else:
-        text = "No artist find"    
+        text = "No se encontro al artista buscado. Por favor intente de nuevo"    
     return text
